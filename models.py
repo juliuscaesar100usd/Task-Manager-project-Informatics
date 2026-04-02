@@ -12,6 +12,17 @@ class Priority(enum.Enum):
     medium = "medium"
     high = "high"
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String)
+    is_admin = Column(Boolean, default=False)
+
+    #tasks = relationship("Task", back_populates="owner")
+    tasks_assigned = relationship("Task", foreign_keys="Task.assigned_to", back_populates="assignee")
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -28,16 +39,5 @@ class Task(Base):
     #owner = relationship("User", back_populates="tasks")
     assignee = relationship("User", foreign_keys=[assigned_to], back_populates="tasks_assigned")
     creator = relationship("User", foreign_keys=[created_by])
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String)
-    is_admin = Column(Boolean, default=False)
-
-    #tasks = relationship("Task", back_populates="owner")
-    tasks_assigned = relationship("Task", foreign_keys="Task.assigned_to", back_populates="assignee")
 
 Base.metadata.create_all(engine)
