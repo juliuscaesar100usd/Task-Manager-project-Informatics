@@ -32,7 +32,7 @@ class Task(Base):
     status = Column(Enum(Status), default=Status.incomplete)
     priority = Column(Enum(Priority), default=Priority.medium)
     deadline = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"))
     created_by = Column(Integer, ForeignKey("users.id"))
 
