@@ -1,9 +1,9 @@
 from typing import Annotated
-from fastapi import Depends, FastAPI, HTTPException, Query
-from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import create_engine
+from fastapi import Depends
+from sqlalchemy import create_engine, Field, select, Session
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+
+Base = declarative_base()
 
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"

@@ -1,14 +1,13 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, engine
+import enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship
-from database.py import Base
-from enum import Enum
-from datetime import datetime
-
-class Status(Enum):
+from database import Base, engine
+from datetime import datetime, timezone
+class Status(enum.Enum):
     incomplete = "incomplete"
     complete = "complete"
 
-class Priority(Enum):
+class Priority(enum.Enum):
     low = "low"
     medium = "medium"
     high = "high"
@@ -22,12 +21,12 @@ class Task(Base):
     status = Column(Enum(Status), default=Status.incomplete)
     priority = Column(Enum(Priority), default=Priority.medium)
     deadline = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"))
     created_by = Column(Integer, ForeignKey("users.id"))
 
     #owner = relationship("User", back_populates="tasks")
-    assignee = relationship("User", foreign_keys=[assigned_to])
+    assignee = relationship("User", foreign_keys=[assigned_to], back_populates="tasks_assigned")
     creator = relationship("User", foreign_keys=[created_by])
 
 class User(Base):
