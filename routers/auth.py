@@ -22,3 +22,18 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_user)
         return UserResponse(id=new_user.id, username=new_user.username, is_admin=new_user.is_admin)
+    
+@auth_router.post("/login", response_model=Token)
+
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == form_data.username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    else:
+        if not verify_password(form_data.password, user.hashed_password):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+        else:
+            access_token = create_access_token(data={"sub": user.username, "is_admin": user.is_admin})
+            return {"access_token": access_token, "token_type": "bearer"}
+
+ 
