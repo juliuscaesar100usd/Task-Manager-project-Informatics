@@ -43,6 +43,10 @@ def get_my_task(task_id: int, db: Session = Depends(get_db), current_user: User 
     else:
         return TaskResponse.model_validate(task)
 
+@my_tasks_router.patch("/{task_id}/status", response_model=TaskResponse)
+
+
+
 @tasks_router.get("/{task_id}", response_model=TaskResponse)
 
 def get_one_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
