@@ -45,3 +45,6 @@ class TaskResponse(BaseModel):
     created_by: int
 
     model_config = ConfigDict(from_attributes=True)
+
+class TaskStatusUpdate(BaseModel):
+    status: Status
