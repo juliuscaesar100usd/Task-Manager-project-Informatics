@@ -17,7 +17,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     
     else:
         hashed_password = hash_password(user.password)
-        new_user = User(username=user.username, password=hashed_password, is_admin=False)
+        new_user = User(username=user.username, hashed_password=hashed_password, is_admin=False)
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
