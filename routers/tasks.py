@@ -26,3 +26,11 @@ def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     tasks = db.query(Task).all()
     return [TaskResponse.from_orm(task) for task in tasks]
 
+@tasks_router.get("/{task_id}", response_model=TaskResponse)
+
+def get_one_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskResponse.from_orm(task)
+
