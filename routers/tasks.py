@@ -34,3 +34,18 @@ def get_one_task(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskResponse.from_orm(task)
 
+@tasks_router.put("/{task_id}", response_model=TaskResponse)
+
+def update_task(task_id: int, task_data: TaskUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    else:
+        for key, value in task_data.model_dump(exclude_unset=True).items():
+            setattr(task, key, value)
+        db.commit()
+        db.refresh(task)
+        return TaskResponse.from_orm(task)
+    
+
+    
