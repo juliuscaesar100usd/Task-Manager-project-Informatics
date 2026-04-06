@@ -26,6 +26,23 @@ def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(requir
     tasks = db.query(Task).all()
     return [TaskResponse.model_validate(task) for task in tasks]
 
+@my_tasks_router.get("/", response_model=list[TaskResponse])
+
+def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    tasks = db.query(Task).filter(Task.assigned_to == current_user.id).all()
+    return [TaskResponse.model_validate(task) for task in tasks]
+
+@my_tasks_router.get("/{task_id}", response_model=TaskResponse)
+
+def get_my_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(Task).filter(Task.id == task_id, Task.assigned_to == current_user.id).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    elif task.assigned_to != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this task")
+    else:
+        return TaskResponse.model_validate(task)
+
 @tasks_router.get("/{task_id}", response_model=TaskResponse)
 
 def get_one_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
@@ -57,5 +74,3 @@ def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User 
         db.delete(task)
         db.commit()
         return {"message": "Task deleted successfully"}
-
-    
