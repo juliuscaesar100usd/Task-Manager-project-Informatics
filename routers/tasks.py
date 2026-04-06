@@ -2,10 +2,11 @@ from fastapi import Depends, HTTPException, status, APIRouter
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User, Task
-from schemas import TaskCreate, TaskResponse, TaskUpdate
+from schemas import TaskCreate, TaskResponse, TaskUpdate, TaskStatusUpdate
 from dependencies import get_current_user, require_admin
 
 tasks_router = APIRouter(prefix="/tasks", tags=["Tasks"])
+my_tasks_router = APIRouter(prefix="/my-tasks", tags=["My Tasks"])
 
 @tasks_router.post("/", response_model=TaskResponse)
 
@@ -45,7 +46,17 @@ def get_my_task(task_id: int, db: Session = Depends(get_db), current_user: User 
 
 @my_tasks_router.patch("/{task_id}/status", response_model=TaskResponse)
 
-
+def update_my_task_status(task_id: int, status_update: TaskStatusUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(Task).filter(Task.id == task_id, Task.assigned_to == current_user.id).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    elif task.assigned_to != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this task")
+    else:
+        task.status = status_update.status
+        db.commit()
+        db.refresh(task)
+        return TaskResponse.model_validate(task)
 
 @tasks_router.get("/{task_id}", response_model=TaskResponse)
 
