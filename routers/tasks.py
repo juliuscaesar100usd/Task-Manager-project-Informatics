@@ -47,5 +47,15 @@ def update_task(task_id: int, task_data: TaskUpdate, db: Session = Depends(get_d
         db.refresh(task)
         return TaskResponse.from_orm(task)
     
+@tasks_router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+
+def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    else:
+        db.delete(task)
+        db.commit()
+        return {"message": "Task deleted successfully"}
 
     
