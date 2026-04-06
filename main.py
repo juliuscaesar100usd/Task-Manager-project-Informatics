@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from routers.auth import auth_router
-from routers.tasks import tasks_router
+from routers.tasks import tasks_router, my_tasks_router
 
 
 import models
@@ -13,3 +13,4 @@ def read_root():
 
 app.include_router(auth_router)
 app.include_router(tasks_router)
+app.include_router(my_tasks_router)

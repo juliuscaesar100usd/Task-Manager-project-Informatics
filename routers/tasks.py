@@ -6,7 +6,6 @@ from schemas import TaskCreate, TaskResponse, TaskUpdate, TaskStatusUpdate
 from dependencies import get_current_user, require_admin
 
 tasks_router = APIRouter(prefix="/tasks", tags=["Tasks"])
-my_tasks_router = APIRouter(prefix="/my-tasks", tags=["My Tasks"])
 
 @tasks_router.post("/", response_model=TaskResponse)
 
@@ -27,16 +26,16 @@ def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(requir
     tasks = db.query(Task).all()
     return [TaskResponse.model_validate(task) for task in tasks]
 
-@my_tasks_router.get("/", response_model=list[TaskResponse])
+@tasks_router.get("/my-tasks", response_model=list[TaskResponse])
 
 def get_my_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tasks = db.query(Task).filter(Task.assigned_to == current_user.id).all()
     return [TaskResponse.model_validate(task) for task in tasks]
 
-@my_tasks_router.get("/{task_id}", response_model=TaskResponse)
+@tasks_router.get("/my-tasks/{task_id}", response_model=TaskResponse)
 
 def get_my_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task = db.query(Task).filter(Task.id == task_id, Task.assigned_to == current_user.id).first()
+    task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     elif task.assigned_to != current_user.id:
@@ -44,10 +43,10 @@ def get_my_task(task_id: int, db: Session = Depends(get_db), current_user: User 
     else:
         return TaskResponse.model_validate(task)
 
-@my_tasks_router.patch("/{task_id}/status", response_model=TaskResponse)
+@tasks_router.patch("/my-tasks/{task_id}/status", response_model=TaskResponse)
 
 def update_my_task_status(task_id: int, status_update: TaskStatusUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task = db.query(Task).filter(Task.id == task_id, Task.assigned_to == current_user.id).first()
+    task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     elif task.assigned_to != current_user.id:
@@ -57,7 +56,7 @@ def update_my_task_status(task_id: int, status_update: TaskStatusUpdate, db: Ses
         db.commit()
         db.refresh(task)
         return TaskResponse.model_validate(task)
-
+    
 @tasks_router.get("/{task_id}", response_model=TaskResponse)
 
 def get_one_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
