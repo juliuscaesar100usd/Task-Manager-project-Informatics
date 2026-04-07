@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Manager — My Tasks</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="logo">Task Manager</div>
+  <div class="header-right">
+    <span class="username-tag" id="header-username"></span>
+    <button class="btn btn-ghost" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="page-wide">
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">My Tasks</div></div>
+    <div class="stat"><div class="stat-value" id="stat-incomplete">—</div><div class="stat-label">Incomplete</div></div>
+    <div class="stat"><div class="stat-value" id="stat-complete">—</div><div class="stat-label">Complete</div></div>
+    <div class="stat"><div class="stat-value" id="stat-high">—</div><div class="stat-label">High Priority</div></div>
+  </div>
+
+  <div class="toolbar">
+    <h2 style="margin:0">My Tasks</h2>
+  </div>
+
+  <div class="alert alert-error" id="page-error"></div>
+  <div class="alert alert-success" id="page-success"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Deadline</th>
+          <th>Update Status</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-tbody">
+        <tr class="empty-row"><td colspan="6">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const API = 'http://127.0.0.1:8000';
+
+  // Guard: redirect to login if not authenticated
+  const token = localStorage.getItem('token');
+  const isAdmin = localStorage.getItem('is_admin') === 'true';
+
+  if (!token) {
+    window.location.href = 'index.html';
+  }
+
+  // If admin accidentally lands here, send them to admin dashboard
+  if (isAdmin) {
+    window.location.href = 'admin.html';
+  }
+
+  document.getElementById('header-username').textContent = localStorage.getItem('username');
+
+  // Authenticated fetch helper
+  async function apiFetch(path, options = {}) {
+    return fetch(`${API}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(options.headers || {})
+      }
+    });
+  }
+
+  function showPageMsg(msg, type = 'error') {
+    const el = document.getElementById(type === 'error' ? 'page-error' : 'page-success');
+    const other = document.getElementById(type === 'error' ? 'page-success' : 'page-error');
+    other.classList.remove('visible');
+    el.textContent = msg;
+    el.classList.add('visible');
+    setTimeout(() => el.classList.remove('visible'), 3000);
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const now = new Date();
+    const isOverdue = d < now;
+    const formatted = d.toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric'
+    });
+    // Highlight overdue deadlines in red
+    return isOverdue
+      ? `<span style="color:var(--danger)">${formatted} ⚠</span>`
+      : `<span style="font-family:var(--mono);font-size:12px;color:var(--sub)">${formatted}</span>`;
+  }
+
+  function priorityBadge(p) {
+    return `<span class="badge badge-${p}">${p}</span>`;
+  }
+
+  function statusBadge(s) {
+    return `<span class="badge badge-${s}">${s}</span>`;
+  }
+
+  async function loadTasks() {
+    const tbody = document.getElementById('tasks-tbody');
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading...</td></tr>';
+
+    const res = await apiFetch('/tasks/my-tasks');
+
+    if (!res.ok) {
+      if (res.status === 401) { logout(); return; }
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Failed to load tasks.</td></tr>';
+      return;
+    }
+
+    const tasks = await res.json();
+
+    // Update stats
+    document.getElementById('stat-total').textContent = tasks.length;
+    document.getElementById('stat-incomplete').textContent = tasks.filter(t => t.status === 'incomplete').length;
+    document.getElementById('stat-complete').textContent = tasks.filter(t => t.status === 'complete').length;
+    document.getElementById('stat-high').textContent = tasks.filter(t => t.priority === 'high').length;
+
+    if (tasks.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks assigned to you yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = tasks.map(task => `
+      <tr>
+        <td style="font-family:var(--mono);color:var(--sub);font-size:12px">${task.id}</td>
+        <td>
+          <div style="font-weight:400">${task.title}</div>
+          ${task.description
+            ? `<div style="color:var(--sub);font-size:12px;margin-top:2px">${task.description}</div>`
+            : ''}
+        </td>
+        <td>${statusBadge(task.status)}</td>
+        <td>${priorityBadge(task.priority)}</td>
+        <td>${formatDate(task.deadline)}</td>
+        <td>
+          <!-- Status toggle — worker can only change status, nothing else -->
+          <select
+            class="status-select"
+            onchange="updateStatus(${task.id}, this.value)"
+          >
+            <option value="incomplete" ${task.status === 'incomplete' ? 'selected' : ''}>Incomplete</option>
+            <option value="complete"   ${task.status === 'complete'   ? 'selected' : ''}>Complete</option>
+          </select>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function updateStatus(taskId, newStatus) {
+    const res = await apiFetch(`/tasks/my-tasks/${taskId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus })
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) { logout(); return; }
+      showPageMsg('Failed to update status.');
+      loadTasks(); // revert the dropdown visually
+      return;
+    }
+
+    showPageMsg('Status updated.', 'success');
+    // No need to reload entire table — the dropdown already reflects the change
+  }
+
+  function logout() {
+    localStorage.clear();
+    window.location.href = 'index.html';
+  }
+
+  // Initial load
+  loadTasks();
+</script>
+
+</body>
+</html>
