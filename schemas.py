@@ -1,10 +1,10 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 from models import Status, Priority
 class UserCreate(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
 
 class UserResponse(BaseModel):
     id: int
@@ -18,7 +18,7 @@ class Token(BaseModel):
     token_type: str
 
 class TaskCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1)
     description: Optional[str] = None
     status: Optional[Status] = Status.incomplete
     priority: Optional[Priority] = Priority.medium
