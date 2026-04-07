@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Manager — Admin</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="logo">Task Manager / Admin</div>
+  <div class="header-right">
+    <span class="username-tag" id="header-username"></span>
+    <button class="btn btn-ghost" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="page-wide">
+
+  <!-- Stats row -->
+  <div class="stats" id="stats-row">
+    <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total Tasks</div></div>
+    <div class="stat"><div class="stat-value" id="stat-incomplete">—</div><div class="stat-label">Incomplete</div></div>
+    <div class="stat"><div class="stat-value" id="stat-complete">—</div><div class="stat-label">Complete</div></div>
+    <div class="stat"><div class="stat-value" id="stat-users">—</div><div class="stat-label">Users</div></div>
+  </div>
+
+  <!-- Task table -->
+  <div class="toolbar">
+    <h2 style="margin:0">All Tasks</h2>
+    <button class="btn btn-primary" onclick="openCreateModal()">+ New Task</button>
+  </div>
+
+  <div class="alert alert-error" id="page-error"></div>
+  <div class="alert alert-success" id="page-success"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Assigned To</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Deadline</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-tbody">
+        <tr class="empty-row"><td colspan="7">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create / Edit Modal -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">New Task</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+
+    <div class="alert alert-error" id="modal-error"></div>
+
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" id="f-title" placeholder="Task title" />
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="f-desc" placeholder="Optional description"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Assign To (User ID) *</label>
+      <select id="f-user"></select>
+    </div>
+    <div class="form-group">
+      <label>Priority</label>
+      <select id="f-priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="f-status">
+        <option value="incomplete" selected>Incomplete</option>
+        <option value="complete">Complete</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Deadline *</label>
+      <input type="datetime-local" id="f-deadline" />
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-submit-btn" onclick="submitTask()">Create Task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = 'http://127.0.0.1:8000';
+  let editingTaskId = null;
+  let allUsers = [];
+
+  // Guard: redirect to login if not authenticated or not admin
+  const token = localStorage.getItem('token');
+  const isAdmin = localStorage.getItem('is_admin') === 'true';
+  if (!token || !isAdmin) {
+    window.location.href = 'index.html';
+  }
+
+  document.getElementById('header-username').textContent = localStorage.getItem('username');
+
+  // Authenticated fetch helper — automatically adds the Bearer token header
+  async function apiFetch(path, options = {}) {
+    return fetch(`${API}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(options.headers || {})
+      }
+    });
+  }
+
+  function showPageMsg(msg, type = 'error') {
+    const el = document.getElementById(type === 'error' ? 'page-error' : 'page-success');
+    const other = document.getElementById(type === 'error' ? 'page-success' : 'page-error');
+    other.classList.remove('visible');
+    el.textContent = msg;
+    el.classList.add('visible');
+    setTimeout(() => el.classList.remove('visible'), 3000);
+  }
+
+  function showModalError(msg) {
+    const el = document.getElementById('modal-error');
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+
+  function hideModalError() {
+    document.getElementById('modal-error').classList.remove('visible');
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric'
+    });
+  }
+
+  function priorityBadge(p) {
+    return `<span class="badge badge-${p}">${p}</span>`;
+  }
+
+  function statusBadge(s) {
+    return `<span class="badge badge-${s}">${s}</span>`;
+  }
+
+  function userLabel(userId) {
+    const u = allUsers.find(u => u.id === userId);
+    return u ? u.username : `#${userId}`;
+  }
+
+  // Load all users for the assign-to dropdown
+  async function loadUsers() {
+    // We use the tasks endpoint to infer users, but ideally you'd have a /users endpoint.
+    // For now we load all tasks and extract unique assigned users, plus a manual approach:
+    // Since there's no /users endpoint, we store users from register or you can add one.
+    // As a practical solution, we ask admin to enter user ID directly — shown in select as IDs.
+    // We fetch tasks first, extract unique assigned_to IDs and show them.
+    const res = await apiFetch('/tasks/');
+    if (!res.ok) return;
+    const tasks = await res.json();
+    const ids = [...new Set(tasks.map(t => t.assigned_to))];
+    allUsers = ids.map(id => ({ id, username: `User #${id}` }));
+    return ids;
+  }
+
+  async function loadTasks() {
+    const tbody = document.getElementById('tasks-tbody');
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading...</td></tr>';
+
+    const res = await apiFetch('/tasks/');
+    if (!res.ok) {
+      if (res.status === 401) { logout(); return; }
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Failed to load tasks.</td></tr>';
+      return;
+    }
+
+    const tasks = await res.json();
+
+    // Update stats
+    document.getElementById('stat-total').textContent = tasks.length;
+    document.getElementById('stat-incomplete').textContent = tasks.filter(t => t.status === 'incomplete').length;
+    document.getElementById('stat-complete').textContent = tasks.filter(t => t.status === 'complete').length;
+    const uniqueUsers = new Set(tasks.map(t => t.assigned_to));
+    document.getElementById('stat-users').textContent = uniqueUsers.size;
+
+    if (tasks.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No tasks yet. Create one above.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = tasks.map(task => `
+      <tr>
+        <td style="font-family:var(--mono);color:var(--sub);font-size:12px">${task.id}</td>
+        <td>
+          <div style="font-weight:400">${task.title}</div>
+          ${task.description ? `<div style="color:var(--sub);font-size:12px;margin-top:2px">${task.description}</div>` : ''}
+        </td>
+        <td style="font-family:var(--mono);font-size:12px">User #${task.assigned_to}</td>
+        <td>${statusBadge(task.status)}</td>
+        <td>${priorityBadge(task.priority)}</td>
+        <td style="font-family:var(--mono);font-size:12px;color:var(--sub)">${formatDate(task.deadline)}</td>
+        <td>
+          <div class="actions">
+            <button class="btn btn-ghost" onclick="openEditModal(${task.id})">Edit</button>
+            <button class="btn btn-danger" onclick="deleteTask(${task.id})">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function openCreateModal() {
+    editingTaskId = null;
+    hideModalError();
+    document.getElementById('modal-title').textContent = 'New Task';
+    document.getElementById('modal-submit-btn').textContent = 'Create Task';
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-priority').value = 'medium';
+    document.getElementById('f-status').value = 'incomplete';
+    document.getElementById('f-deadline').value = '';
+
+    // Populate user select with a free-input field approach
+    const sel = document.getElementById('f-user');
+    sel.innerHTML = '<option value="">— enter user ID manually below —</option>';
+    // Replace select with a number input for simplicity since there is no /users endpoint
+    sel.outerHTML = '<input type="number" id="f-user" placeholder="User ID (number)" min="1" />';
+
+    document.getElementById('task-modal').classList.add('open');
+  }
+
+  async function openEditModal(taskId) {
+    editingTaskId = taskId;
+    hideModalError();
+    document.getElementById('modal-title').textContent = 'Edit Task';
+    document.getElementById('modal-submit-btn').textContent = 'Save Changes';
+
+    const res = await apiFetch(`/tasks/${taskId}`);
+    if (!res.ok) { showPageMsg('Could not load task.'); return; }
+    const task = await res.json();
+
+    document.getElementById('f-title').value = task.title;
+    document.getElementById('f-desc').value = task.description || '';
+    document.getElementById('f-priority').value = task.priority;
+    document.getElementById('f-status').value = task.status;
+
+    // Format deadline for datetime-local input (it needs YYYY-MM-DDTHH:MM)
+    if (task.deadline) {
+      const d = new Date(task.deadline);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+      document.getElementById('f-deadline').value = local;
+    }
+
+    // Replace user field with a plain input showing current assigned user
+    const userFieldParent = document.getElementById('f-user').parentNode;
+    const userFieldEl = document.getElementById('f-user');
+    if (userFieldEl.tagName === 'SELECT') {
+      userFieldEl.outerHTML = `<input type="number" id="f-user" value="${task.assigned_to}" min="1" />`;
+    } else {
+      userFieldEl.value = task.assigned_to;
+    }
+
+    document.getElementById('task-modal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('task-modal').classList.remove('open');
+    editingTaskId = null;
+  }
+
+  // Close modal when clicking outside
+  document.getElementById('task-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  async function submitTask() {
+    hideModalError();
+
+    const title = document.getElementById('f-title').value.trim();
+    const desc = document.getElementById('f-desc').value.trim();
+    const userId = parseInt(document.getElementById('f-user').value);
+    const priority = document.getElementById('f-priority').value;
+    const status = document.getElementById('f-status').value;
+    const deadlineRaw = document.getElementById('f-deadline').value;
+
+    if (!title) { showModalError('Title is required.'); return; }
+    if (!userId) { showModalError('User ID is required.'); return; }
+    if (!deadlineRaw) { showModalError('Deadline is required.'); return; }
+
+    // Convert datetime-local to ISO string for the API
+    const deadline = new Date(deadlineRaw).toISOString();
+
+    const body = { title, description: desc || null, assigned_to: userId, priority, status, deadline };
+
+    const btn = document.getElementById('modal-submit-btn');
+    btn.disabled = true;
+
+    try {
+      let res;
+      if (editingTaskId) {
+        // PUT for update
+        res = await apiFetch(`/tasks/${editingTaskId}`, {
+          method: 'PUT',
+          body: JSON.stringify(body)
+        });
+      } else {
+        // POST for create
+        res = await apiFetch('/tasks/', {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+      }
+
+      if (!res.ok) {
+        const data = await res.json();
+        showModalError(data.detail || 'Something went wrong.');
+        return;
+      }
+
+      closeModal();
+      showPageMsg(editingTaskId ? 'Task updated.' : 'Task created.', 'success');
+      loadTasks();
+
+    } catch (err) {
+      showModalError('Connection error.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function deleteTask(taskId) {
+    if (!confirm('Delete this task? This cannot be undone.')) return;
+
+    const res = await apiFetch(`/tasks/${taskId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      showPageMsg('Failed to delete task.');
+      return;
+    }
+    showPageMsg('Task deleted.', 'success');
+    loadTasks();
+  }
+
+  function logout() {
+    localStorage.clear();
+    window.location.href = 'index.html';
+  }
+
+  // Initial load
+  loadTasks();
+</script>
+
+</body>
+</html>
